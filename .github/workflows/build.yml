@@ -61,6 +61,11 @@ jobs:
           cd src
           git -c user.name=fasc-bot -c user.email=fasc-bot@users.noreply.github.com am --3way ../fasc/patches/*.patch
 
+      - name: Restore Village release atlas
+        if: steps.skip.outputs.skip != 'true'
+        # Same step as upstream's dotnet.yml: the build needs the atlas from Valour's public CDN.
+        run: cd src && python3 Tools/Villages/restore-release-assets.py
+
       - name: Open an issue when a patch no longer applies
         if: failure()
         env:
