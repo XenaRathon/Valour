@@ -1,0 +1,92 @@
+# Builds the Valour server image from the latest upstream main with patches/*.patch applied.
+# Runs every 6 hours; skips when that upstream commit was already built. If a patch stops applying,
+# the run fails and opens an issue here instead of publishing anything.
+name: Build patched Valour
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if this upstream commit was already built
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  packages: write
+  issues: write
+concurrency: build-patched-valour
+env:
+  UPSTREAM: Valour-Software/Valour
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find upstream head
+        id: up
+        run: |
+          sha=$(git ls-remote "https://github.com/$UPSTREAM" refs/heads/main | cut -c1-40)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha::7}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/valour" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if already built
+        id: skip
+        run: |
+          if [ "${{ inputs.force }}" != "true" ] && docker manifest inspect "${{ steps.up.outputs.image }}:fasc-${{ steps.up.outputs.short }}" >/dev/null 2>&1; then
+            echo "Upstream ${{ steps.up.outputs.short }} already built."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
+        with:
+          path: fasc
+
+      - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
+        with:
+          repository: ${{ env.UPSTREAM }}
+          ref: ${{ steps.up.outputs.sha }}
+          path: src
+
+      - name: Apply patches
+        if: steps.skip.outputs.skip != 'true'
+        run: |
+          cd src
+          git -c user.name=fasc-bot -c user.email=fasc-bot@users.noreply.github.com am --3way ../fasc/patches/*.patch
+
+      - name: Open an issue when a patch no longer applies
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Patch no longer applies to upstream ${{ steps.up.outputs.short }}"
+          if [ -z "$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[].number')" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. The node keeps running the last good fasc-latest image until patches/ is refreshed."
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.skip.outputs.skip != 'true'
+
+      - uses: docker/build-push-action@v6
+        if: steps.skip.outputs.skip != 'true'
+        with:
+          context: src
+          platforms: linux/amd64
+          provenance: false
+          push: true
+          build-args: |
+            SHORTHASH=${{ steps.up.outputs.short }}
+          tags: |
+            ${{ steps.up.outputs.image }}:fasc-${{ steps.up.outputs.short }}
+            ${{ steps.up.outputs.image }}:fasc-latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.up.outputs.sha }}
+            org.opencontainers.image.description=Valour server (upstream main) with the fasc patches applied

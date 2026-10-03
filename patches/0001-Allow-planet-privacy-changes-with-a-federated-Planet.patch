@@ -1,0 +1,31 @@
+From 8053df857516a6401d39f6ce86867298933b57b3 Mon Sep 17 00:00:00 2001
+From: xenarathon <xenarathon@git.ourserver.party>
+Date: Sat, 3 Oct 2026 18:33:33 -0400
+Subject: [PATCH] Allow planet privacy changes with a federated
+ (PlanetManagement) session
+
+Community nodes mint node-local sessions without FullControl (FederationNodeService.CreateLocalSessionAsync),
+so PUT api/planets/{id}/privacy returned 403 for every community-hosted planet owner. The route still
+refuses anyone but the owner, and the change still carries the owner-device-signed membership log entry.
+---
+ Valour/Server/Api/Dynamic/PlanetApi.cs | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/Valour/Server/Api/Dynamic/PlanetApi.cs b/Valour/Server/Api/Dynamic/PlanetApi.cs
+index 8257fb8..61652fe 100644
+--- a/Valour/Server/Api/Dynamic/PlanetApi.cs
++++ b/Valour/Server/Api/Dynamic/PlanetApi.cs
+@@ -224,7 +224,9 @@ public class PlanetApi
+     /// needs a membership log entry the owner's device signs.
+     /// </summary>
+     [ValourRoute(HttpVerbs.Put, "api/planets/{id}/privacy")]
+-    [UserRequired(UserPermissionsEnum.FullControl)]
++    // Community nodes issue federated sessions without FullControl, so requiring it here locks every
++    // community-hosted owner out of this switch. Owner-only + the owner-signed log entry still apply below.
++    [UserRequired(UserPermissionsEnum.PlanetManagement)]
+     public static async Task<IResult> SetPrivacyRouteAsync(
+         long id,
+         [FromBody] SetPlanetPrivacyRequest? request,
+-- 
+2.55.0
+
