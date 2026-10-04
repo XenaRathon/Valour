@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: xenarathon <xenarathon@git.ourserver.party>
+Date: Sat, 03 Oct 2026 22:26:32 -0400
+Subject: [PATCH] Restrict planet wiki reads to members holding a role beyond the
+ default role
+
+Newcomers who only hold the default (everyone) role cannot read the wiki.
+Upstream allows any planet member to read it and has no view-wiki permission.
+---
+diff --git a/Valour/Server/Api/Dynamic/PlanetWikiApi.cs b/Valour/Server/Api/Dynamic/PlanetWikiApi.cs
+index f860ec9..21dfda5 100644
+--- a/Valour/Server/Api/Dynamic/PlanetWikiApi.cs
++++ b/Valour/Server/Api/Dynamic/PlanetWikiApi.cs
+@@ -13,6 +13,10 @@ namespace Valour.Server.Api.Dynamic;
+ /// </summary>
+ public class PlanetWikiApi
+ {
++    // fasc patch: wiki reads need a role beyond the planet's default (index 0) role, so
++    // members who only hold the default role (newcomers) cannot read the wiki.
++    private static bool HoldsRoleBeyondDefault(PlanetMember member) =>
++        member.RoleMembership.GetRoleIndices().Any(i => i != 0);
+     ///////////
+     // Reads //
+     ///////////
+@@ -27,6 +31,8 @@ public class PlanetWikiApi
+         var member = await memberService.GetCurrentAsync(planetId);
+         if (member is null)
+             return ValourResult.NotPlanetMember();
++        if (!HoldsRoleBeyondDefault(member))
++            return ValourResult.Forbid("The wiki is visible to members with a role beyond the default role.");
+ 
+         var tree = await wikiService.GetTreeAsync(planetId);
+         return Results.Json(tree);
+@@ -43,6 +49,8 @@ public class PlanetWikiApi
+         var member = await memberService.GetCurrentAsync(planetId);
+         if (member is null)
+             return ValourResult.NotPlanetMember();
++        if (!HoldsRoleBeyondDefault(member))
++            return ValourResult.Forbid("The wiki is visible to members with a role beyond the default role.");
+ 
+         var doc = await wikiService.GetAsync(planetId, pageId);
+         if (doc is null)
+@@ -62,6 +70,8 @@ public class PlanetWikiApi
+         var member = await memberService.GetCurrentAsync(planetId);
+         if (member is null)
+             return ValourResult.NotPlanetMember();
++        if (!HoldsRoleBeyondDefault(member))
++            return ValourResult.Forbid("The wiki is visible to members with a role beyond the default role.");
+ 
+         var (doc, _) = await wikiService.ResolveSlugAsync(planetId, slug);
+         if (doc is null)
+@@ -81,6 +91,8 @@ public class PlanetWikiApi
+         var member = await memberService.GetCurrentAsync(planetId);
+         if (member is null)
+             return ValourResult.NotPlanetMember();
++        if (!HoldsRoleBeyondDefault(member))
++            return ValourResult.Forbid("The wiki is visible to members with a role beyond the default role.");
+ 
+         var content = await wikiService.GetContentAsync(planetId, pageId);
+         if (content is null)
+@@ -100,6 +112,8 @@ public class PlanetWikiApi
+         var member = await memberService.GetCurrentAsync(planetId);
+         if (member is null)
+             return ValourResult.NotPlanetMember();
++        if (!HoldsRoleBeyondDefault(member))
++            return ValourResult.Forbid("The wiki is visible to members with a role beyond the default role.");
+ 
+         var results = await wikiService.SearchAsync(planetId, q, includeUnpublished: true);
+         return Results.Json(results);
+-- 
+2.51.0
